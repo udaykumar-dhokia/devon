@@ -9,6 +9,8 @@ dependencies = [
     "deepagents>=0.5.2",
     "langchain>=1.2.15",
     "langchain-ollama>=1.1.0",
+    "pygithub>=2.9.1",
+    "rich>=15.0.0",
 ]
 [project.scripts]
 devon = "devon.cli:main"

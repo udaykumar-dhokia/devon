@@ -1,11 +1,12 @@
 # Devon
 
-Devon is your professional AI coding assistant. It helps you onboard with GitHub and manage your coding tasks efficiently.
+Devon is your professional AI coding assistant. It helps you onboard with GitHub and manage your coding projects with a high-performance interactive shell.
 
 ## Features
 
-- **Onboarding**: Easily configure your GitHub credentials.
-- **Coding Mode**: Standalone mode for Devon to start working on your codebase.
+- **Onboarding**: Configure your GitHub credentials securely.
+- **Interactive Shell**: A premium, monochrome command environment for repository management.
+- **GitHub Integration**: Direct connection to your GitHub account via `PyGithub`.
 
 ## Installation
 
@@ -25,19 +26,28 @@ To set up your GitHub credentials:
 uv run devon onboard
 ```
 
-You will be prompted for your GitHub username and token. Credentials are stored securely (masked input) at `~/.devon/config.json`.
+### Interactive Shell
 
-### Coding Mode
-
-To start Devon's coding mode:
+To enter Devon's interactive coding mode:
 
 ```bash
 uv run devon code
 ```
 
+#### Supported Commands in Shell:
+
+- `/list` - List all your GitHub repositories.
+- `/clone <repo>` - Clone a repository into `~/.devon/repos/` and select it. (Automatically prepends your username if owner is omitted).
+- `/repos` - List all locally cloned repositories.
+- `/use <repo_name>` - Select a local repository for the current session.
+- `/delete <repo_name>` - Delete a repository from your local system.
+- `/help` - Show detailed command help and explanations.
+- `/exit` - Exit the interactive shell.
+
 ## Technical Details
 
 - **Language**: Python 3.14+
-- **CLI Framework**: Click
-- **Config Management**: Pydantic with masked Secret types.
-- **Directory Structure**: SRC layout for modularity and scalability.
+- **CLI Framework**: Click & Rich
+- **GitHub API**: PyGithub
+- **Config Management**: Pydantic with Secret types.
+- **Aesthetics**: Premium Black & White monochrome design.
