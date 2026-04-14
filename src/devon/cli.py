@@ -110,12 +110,12 @@ def code():
                 repo_full_name = repo_name if "/" in repo_name else f"{config.github_username}/{repo_name}"
                 
                 try:
-                    with CONSOLE.status(f"[bold]Cloning {repo_full_name}..."):
+                    with CONSOLE.status(f"[bold]Preparing grammars and Indexing {repo_full_name}..."):
                         repo = gh.get_repo(repo_full_name)
                         clone_url = gh.get_authenticated_clone_url(repo)
-                        manager.clone(clone_url, repo.name)
+                        indexed_count = manager.clone(clone_url, repo.name)
                         current_repo = repo.name
-                    print_success(f"Cloned and selected {repo_full_name}")
+                    print_success(f"Cloned and indexed {indexed_count} files in {repo_full_name}")
                 except Exception as e:
                     print_error(f"Failed to clone: {e}")
 
