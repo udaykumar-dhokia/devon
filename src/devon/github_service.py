@@ -1,6 +1,8 @@
 from github import Github
 from typing import List
 from github.Repository import Repository
+from github.Issue import Issue
+
 
 class GitHubService:
     def __init__(self, token: str):
@@ -21,3 +23,8 @@ class GitHubService:
         if url.startswith("https://"):
             return f"https://{self.token}@{url[8:]}"
         return url
+
+    def get_repo_issues(self, full_name: str) -> List[Issue]:
+        """Fetch all open issues for a repository."""
+        repo = self.gh.get_repo(full_name)
+        return list(repo.get_issues(state="open"))

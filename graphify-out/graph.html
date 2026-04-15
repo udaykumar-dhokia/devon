@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>graphify - graphify-out/graph.html</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f1a; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  #graph { flex: 1; }
+  #sidebar { width: 280px; background: #1a1a2e; border-left: 1px solid #2a2a4e; display: flex; flex-direction: column; overflow: hidden; }
+  #search-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; }
+  #search { width: 100%; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0; padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
+  #search:focus { border-color: #4E79A7; }
+  #search-results { max-height: 140px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid #2a2a4e; display: none; }
+  .search-item { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-item:hover { background: #2a2a4e; }
+  #info-panel { padding: 14px; border-bottom: 1px solid #2a2a4e; min-height: 140px; }
+  #info-panel h3 { font-size: 13px; color: #aaa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #info-content { font-size: 13px; color: #ccc; line-height: 1.6; }
+  #info-content .field { margin-bottom: 5px; }
+  #info-content .field b { color: #e0e0e0; }
+  #info-content .empty { color: #555; font-style: italic; }
+  .neighbor-link { display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid #333; }
+  .neighbor-link:hover { background: #2a2a4e; }
+  #neighbors-list { max-height: 160px; overflow-y: auto; margin-top: 4px; }
+  #legend-wrap { flex: 1; overflow-y: auto; padding: 12px; }
+  #legend-wrap h3 { font-size: 13px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; border-radius: 4px; font-size: 12px; }
+  .legend-item:hover { background: #2a2a4e; padding-left: 4px; }
+  .legend-item.dimmed { opacity: 0.35; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend-count { color: #666; font-size: 11px; }
+  #stats { padding: 10px 14px; border-top: 1px solid #2a2a4e; font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="sidebar">
+  <div id="search-wrap">
+    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div id="info-panel">
+    <h3>Node Info</h3>
+    <div id="info-content"><span class="empty">Click a node to inspect it</span></div>
+  </div>
+  <div id="legend-wrap">
+    <h3>Communities</h3>
+    <div id="legend"></div>
+  </div>
+  <div id="stats">46 nodes &middot; 63 edges &middot; 8 communities</div>
+</div>
+<script>
+const RAW_NODES = [{"id": "main_py", "label": "main.py", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "main.py", "community": 5, "community_name": "Main Entry Point", "source_file": "main.py", "file_type": "code", "degree": 1}, {"id": "main_main", "label": "main()", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "main()", "community": 5, "community_name": "Main Entry Point", "source_file": "main.py", "file_type": "code", "degree": 1}, {"id": "run_ast_py", "label": "run_ast.py", "color": {"background": "#B07AA1", "border": "#B07AA1", "highlight": {"background": "#ffffff", "border": "#B07AA1"}}, "size": 10.0, "font": {"size": 0, "color": "#ffffff"}, "title": "run_ast.py", "community": 6, "community_name": "Graphify Scripts", "source_file": "run_ast.py", "file_type": "code", "degree": 0}, {"id": "src_devon_cli_py", "label": "cli.py", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 22.9, "font": {"size": 12, "color": "#ffffff"}, "title": "cli.py", "community": 4, "community_name": "CLI Output Functions", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 6}, {"id": "cli_print_header", "label": "print_header()", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "print_header()", "community": 4, "community_name": "CLI Output Functions", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 2}, {"id": "cli_print_error", "label": "print_error()", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "print_error()", "community": 4, "community_name": "CLI Output Functions", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 2}, {"id": "cli_print_success", "label": "print_success()", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": "print_success()", "community": 4, "community_name": "CLI Output Functions", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 3}, {"id": "cli_main", "label": "main()", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "main()", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 2}, {"id": "cli_onboard", "label": "onboard()", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 20.7, "font": {"size": 12, "color": "#ffffff"}, "title": "onboard()", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 5}, {"id": "cli_code", "label": "code()", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 40.0, "font": {"size": 12, "color": "#ffffff"}, "title": "code()", "community": 4, "community_name": "CLI Output Functions", "source_file": "src\\devon\\cli.py", "file_type": "code", "degree": 14}, {"id": "cli_rationale_30", "label": "Devon CLI - Your AI coding assistant.", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 18.6, "font": {"size": 12, "color": "#ffffff"}, "title": "Devon CLI - Your AI coding assistant.", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\cli.py", "file_type": "rationale", "degree": 4}, {"id": "cli_rationale_36", "label": "Onboard Devon with GitHub credentials.", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 18.6, "font": {"size": 12, "color": "#ffffff"}, "title": "Onboard Devon with GitHub credentials.", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "src\\devon\\cli.py", "file_type": "rationale", "degree": 4}, {"id": "cli_rationale_51", "label": "Start Devon's interactive coding shell.", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 18.6, "font": {"size": 12, "color": "#ffffff"}, "title": "Start Devon&#x27;s interactive coding shell.", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\cli.py", "file_type": "rationale", "degree": 4}, {"id": "src_devon_config_py", "label": "config.py", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "config.py", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "src\\devon\\config.py", "file_type": "code", "degree": 2}, {"id": "config_config", "label": "Config", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 27.1, "font": {"size": 12, "color": "#ffffff"}, "title": "Config", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "src\\devon\\config.py", "file_type": "code", "degree": 8}, {"id": "basemodel", "label": "BaseModel", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "BaseModel", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "", "file_type": "code", "degree": 1}, {"id": "config_config_save", "label": ".save()", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": ".save()", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "src\\devon\\config.py", "file_type": "code", "degree": 2}, {"id": "config_load_config", "label": "load_config()", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": "load_config()", "community": 3, "community_name": "Configuration & Onboarding", "source_file": "src\\devon\\config.py", "file_type": "code", "degree": 3}, {"id": "src_devon_github_service_py", "label": "github_service.py", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "github_service.py", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "code", "degree": 1}, {"id": "github_service_githubservice", "label": "GitHubService", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 29.3, "font": {"size": 12, "color": "#ffffff"}, "title": "GitHubService", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "code", "degree": 9}, {"id": "github_service_githubservice_init", "label": ".__init__()", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": ".__init__()", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "code", "degree": 1}, {"id": "github_service_githubservice_get_user_repos", "label": ".get_user_repos()", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": ".get_user_repos()", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "code", "degree": 3}, {"id": "github_service_githubservice_get_repo", "label": ".get_repo()", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": ".get_repo()", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "code", "degree": 3}, {"id": "github_service_githubservice_get_authenticated_clone_url", "label": ".get_authenticated_clone_url()", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": ".get_authenticated_clone_url()", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "code", "degree": 3}, {"id": "github_service_rationale_11", "label": "Fetch all repositories for the authenticated user.", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Fetch all repositories for the authenticated user.", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "rationale", "degree": 1}, {"id": "github_service_rationale_15", "label": "Fetch a specific repository by its full name (e.g., 'owner/repo').", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Fetch a specific repository by its full name (e.g., &#x27;owner/repo&#x27;).", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "rationale", "degree": 1}, {"id": "github_service_rationale_19", "label": "Construct an authenticated clone URL using the token.", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Construct an authenticated clone URL using the token.", "community": 1, "community_name": "GitHub Integration", "source_file": "src\\devon\\github_service.py", "file_type": "rationale", "degree": 1}, {"id": "src_devon_manager_py", "label": "manager.py", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "manager.py", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "code", "degree": 1}, {"id": "manager_repomanager", "label": "RepoManager", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 29.3, "font": {"size": 12, "color": "#ffffff"}, "title": "RepoManager", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "code", "degree": 9}, {"id": "manager_repomanager_init", "label": ".__init__()", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": ".__init__()", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "code", "degree": 1}, {"id": "manager_repomanager_clone", "label": ".clone()", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": ".clone()", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "code", "degree": 3}, {"id": "manager_repomanager_list_local", "label": ".list_local()", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": ".list_local()", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "code", "degree": 3}, {"id": "manager_repomanager_delete", "label": ".delete()", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 16.4, "font": {"size": 12, "color": "#ffffff"}, "title": ".delete()", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "code", "degree": 3}, {"id": "manager_rationale_15", "label": "Clone a repository into local storage.         Returns 0 because indexing is no", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Clone a repository into local storage.         Returns 0 because indexing is no", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "rationale", "degree": 1}, {"id": "manager_rationale_34", "label": "List all cloned repositories.", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "List all cloned repositories.", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "rationale", "degree": 1}, {"id": "manager_rationale_40", "label": "Delete a local repository.", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Delete a local repository.", "community": 0, "community_name": "CLI & Repo Management", "source_file": "src\\devon\\manager.py", "file_type": "rationale", "degree": 1}, {"id": "README_devon", "label": "Devon", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 20.7, "font": {"size": 12, "color": "#ffffff"}, "title": "Devon", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "document", "degree": 5}, {"id": "README_github", "label": "GitHub", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "GitHub", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 1}, {"id": "README_pygithub", "label": "PyGithub", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "PyGithub", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 2}, {"id": "README_python314", "label": "Python 3.14+", "color": {"background": "#FF9DA7", "border": "#FF9DA7", "highlight": {"background": "#ffffff", "border": "#FF9DA7"}}, "size": 10.0, "font": {"size": 0, "color": "#ffffff"}, "title": "Python 3.14+", "community": 7, "community_name": "Python Version Requirements", "source_file": "README.md", "file_type": "code", "degree": 0}, {"id": "README_click_rich", "label": "Click & Rich", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Click &amp; Rich", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 1}, {"id": "README_pydantic", "label": "Pydantic", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "Pydantic", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 2}, {"id": "README_secret_types", "label": "Secret Types", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 14.3, "font": {"size": 0, "color": "#ffffff"}, "title": "Secret Types", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 2}, {"id": "README_uv", "label": "uv", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "uv", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 1}, {"id": "README_monochrome_design", "label": "Premium Black & White Monochrome Design", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Premium Black &amp; White Monochrome Design", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 1}, {"id": "README_secure_credentials", "label": "Secure Credential Handling", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 12.1, "font": {"size": 0, "color": "#ffffff"}, "title": "Secure Credential Handling", "community": 2, "community_name": "Project Documentation", "source_file": "README.md", "file_type": "code", "degree": 1}];
+const RAW_EDGES = [{"from": "main_py", "to": "main_main", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_cli_py", "to": "cli_print_header", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_cli_py", "to": "cli_print_error", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_cli_py", "to": "cli_print_success", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_cli_py", "to": "cli_main", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_cli_py", "to": "cli_onboard", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_cli_py", "to": "cli_code", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_print_header", "to": "cli_code", "label": "calls", "title": "calls [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_print_error", "to": "cli_code", "label": "calls", "title": "calls [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_print_success", "to": "cli_onboard", "label": "calls", "title": "calls [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_print_success", "to": "cli_code", "label": "calls", "title": "calls [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_main", "to": "cli_rationale_30", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_onboard", "to": "cli_rationale_36", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_onboard", "to": "config_config", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_onboard", "to": "config_config_save", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "cli_rationale_51", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "cli_code", "to": "config_load_config", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "github_service_githubservice", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "manager_repomanager", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "github_service_githubservice_get_user_repos", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "github_service_githubservice_get_repo", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "github_service_githubservice_get_authenticated_clone_url", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "manager_repomanager_clone", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "manager_repomanager_list_local", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_code", "to": "manager_repomanager_delete", "label": "calls", "title": "calls [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_30", "to": "github_service_githubservice", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_30", "to": "manager_repomanager", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_30", "to": "config_config", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_36", "to": "github_service_githubservice", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_36", "to": "manager_repomanager", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_36", "to": "config_config", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_51", "to": "github_service_githubservice", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_51", "to": "manager_repomanager", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "cli_rationale_51", "to": "config_config", "label": "uses", "title": "uses [INFERRED]", "dashes": true, "width": 1, "color": {"opacity": 0.35}, "confidence": "INFERRED"}, {"from": "src_devon_config_py", "to": "config_config", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_config_py", "to": "config_load_config", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "config_config", "to": "basemodel", "label": "inherits", "title": "inherits [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "config_config", "to": "config_config_save", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "config_config", "to": "config_load_config", "label": "calls", "title": "calls [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_github_service_py", "to": "github_service_githubservice", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice", "to": "github_service_githubservice_init", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice", "to": "github_service_githubservice_get_user_repos", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice", "to": "github_service_githubservice_get_repo", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice", "to": "github_service_githubservice_get_authenticated_clone_url", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice_get_user_repos", "to": "github_service_rationale_11", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice_get_repo", "to": "github_service_rationale_15", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "github_service_githubservice_get_authenticated_clone_url", "to": "github_service_rationale_19", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "src_devon_manager_py", "to": "manager_repomanager", "label": "contains", "title": "contains [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager", "to": "manager_repomanager_init", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager", "to": "manager_repomanager_clone", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager", "to": "manager_repomanager_list_local", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager", "to": "manager_repomanager_delete", "label": "method", "title": "method [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager_clone", "to": "manager_rationale_15", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager_list_local", "to": "manager_rationale_34", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "manager_repomanager_delete", "to": "manager_rationale_40", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_devon", "to": "README_pygithub", "label": "implements", "title": "implements [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_devon", "to": "README_click_rich", "label": "implements", "title": "implements [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_devon", "to": "README_pydantic", "label": "implements", "title": "implements [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_devon", "to": "README_uv", "label": "implements", "title": "implements [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_devon", "to": "README_monochrome_design", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_github", "to": "README_pygithub", "label": "conceptually_related_to", "title": "conceptually_related_to [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_pydantic", "to": "README_secret_types", "label": "shares_data_with", "title": "shares_data_with [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}, {"from": "README_secret_types", "to": "README_secure_credentials", "label": "rationale_for", "title": "rationale_for [EXTRACTED]", "dashes": false, "width": 2, "color": {"opacity": 0.7}, "confidence": "EXTRACTED"}];
+const LEGEND = [{"cid": 0, "color": "#4E79A7", "label": "CLI &amp; Repo Management", "count": 11}, {"cid": 1, "color": "#F28E2B", "label": "GitHub Integration", "count": 10}, {"cid": 2, "color": "#E15759", "label": "Project Documentation", "count": 9}, {"cid": 3, "color": "#76B7B2", "label": "Configuration &amp; Onboarding", "count": 7}, {"cid": 4, "color": "#59A14F", "label": "CLI Output Functions", "count": 5}, {"cid": 5, "color": "#EDC948", "label": "Main Entry Point", "count": 2}, {"cid": 6, "color": "#B07AA1", "label": "Graphify Scripts", "count": 1}, {"cid": 7, "color": "#FF9DA7", "label": "Python Version Requirements", "count": 1}];
+
+// HTML-escape helper — prevents XSS when injecting graph data into innerHTML
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Build vis datasets
+const nodesDS = new vis.DataSet(RAW_NODES.map(n => ({
+  id: n.id, label: n.label, color: n.color, size: n.size,
+  font: n.font, title: n.title,
+  _community: n.community, _community_name: n.community_name,
+  _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree,
+})));
+
+const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({
+  id: i, from: e.from, to: e.to,
+  label: '',
+  title: e.title,
+  dashes: e.dashes,
+  width: e.width,
+  color: e.color,
+  arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+})));
+
+const container = document.getElementById('graph');
+const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
+  physics: {
+    enabled: true,
+    solver: 'forceAtlas2Based',
+    forceAtlas2Based: {
+      gravitationalConstant: -60,
+      centralGravity: 0.005,
+      springLength: 120,
+      springConstant: 0.08,
+      damping: 0.4,
+      avoidOverlap: 0.8,
+    },
+    stabilization: { iterations: 200, fit: true },
+  },
+  interaction: {
+    hover: true,
+    tooltipDelay: 100,
+    hideEdgesOnDrag: true,
+    navigationButtons: false,
+    keyboard: false,
+  },
+  nodes: { shape: 'dot', borderWidth: 1.5 },
+  edges: { smooth: { type: 'continuous', roundness: 0.2 }, selectionWidth: 3 },
+});
+
+network.once('stabilizationIterationsDone', () => {
+  network.setOptions({ physics: { enabled: false } });
+});
+
+function showInfo(nodeId) {
+  const n = nodesDS.get(nodeId);
+  if (!n) return;
+  const neighborIds = network.getConnectedNodes(nodeId);
+  const neighborItems = neighborIds.map(nid => {
+    const nb = nodesDS.get(nid);
+    const color = nb ? nb.color.background : '#555';
+    return `<span class="neighbor-link" style="border-left-color:${esc(color)}" onclick="focusNode(${JSON.stringify(nid)})">${esc(nb ? nb.label : nid)}</span>`;
+  }).join('');
+  document.getElementById('info-content').innerHTML = `
+    <div class="field"><b>${esc(n.label)}</b></div>
+    <div class="field">Type: ${esc(n._file_type || 'unknown')}</div>
+    <div class="field">Community: ${esc(n._community_name)}</div>
+    <div class="field">Source: ${esc(n._source_file || '-')}</div>
+    <div class="field">Degree: ${n._degree}</div>
+    ${neighborIds.length ? `<div class="field" style="margin-top:8px;color:#aaa;font-size:11px">Neighbors (${neighborIds.length})</div><div id="neighbors-list">${neighborItems}</div>` : ''}
+  `;
+}
+
+function focusNode(nodeId) {
+  network.focus(nodeId, { scale: 1.4, animation: true });
+  network.selectNodes([nodeId]);
+  showInfo(nodeId);
+}
+
+// Track hovered node — hover detection is more reliable than click params
+let hoveredNodeId = null;
+network.on('hoverNode', params => {
+  hoveredNodeId = params.node;
+  container.style.cursor = 'pointer';
+});
+network.on('blurNode', () => {
+  hoveredNodeId = null;
+  container.style.cursor = 'default';
+});
+container.addEventListener('click', () => {
+  if (hoveredNodeId !== null) {
+    showInfo(hoveredNodeId);
+    network.selectNodes([hoveredNodeId]);
+  }
+});
+network.on('click', params => {
+  if (params.nodes.length > 0) {
+    showInfo(params.nodes[0]);
+  } else if (hoveredNodeId === null) {
+    document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
+  }
+});
+
+const searchInput = document.getElementById('search');
+const searchResults = document.getElementById('search-results');
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.toLowerCase().trim();
+  searchResults.innerHTML = '';
+  if (!q) { searchResults.style.display = 'none'; return; }
+  const matches = RAW_NODES.filter(n => n.label.toLowerCase().includes(q)).slice(0, 20);
+  if (!matches.length) { searchResults.style.display = 'none'; return; }
+  searchResults.style.display = 'block';
+  matches.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'search-item';
+    el.textContent = n.label;
+    el.style.borderLeft = `3px solid ${n.color.background}`;
+    el.style.paddingLeft = '8px';
+    el.onclick = () => {
+      network.focus(n.id, { scale: 1.5, animation: true });
+      network.selectNodes([n.id]);
+      showInfo(n.id);
+      searchResults.style.display = 'none';
+      searchInput.value = '';
+    };
+    searchResults.appendChild(el);
+  });
+});
+document.addEventListener('click', e => {
+  if (!searchResults.contains(e.target) && e.target !== searchInput)
+    searchResults.style.display = 'none';
+});
+
+const hiddenCommunities = new Set();
+const legendEl = document.getElementById('legend');
+LEGEND.forEach(c => {
+  const item = document.createElement('div');
+  item.className = 'legend-item';
+  item.innerHTML = `<div class="legend-dot" style="background:${c.color}"></div>
+    <span class="legend-label">${c.label}</span>
+    <span class="legend-count">${c.count}</span>`;
+  item.onclick = () => {
+    if (hiddenCommunities.has(c.cid)) {
+      hiddenCommunities.delete(c.cid);
+      item.classList.remove('dimmed');
+    } else {
+      hiddenCommunities.add(c.cid);
+      item.classList.add('dimmed');
+    }
+    const updates = RAW_NODES
+      .filter(n => n.community === c.cid)
+      .map(n => ({ id: n.id, hidden: hiddenCommunities.has(c.cid) }));
+    nodesDS.update(updates);
+  };
+  legendEl.appendChild(item);
+});
+</script>
+<script>
+// Render hyperedges as shaded regions
+const hyperedges = [{"id": "github_integration_stack", "label": "GitHub Integration Stack", "nodes": ["README_devon", "README_github", "README_pygithub"], "relation": "participate_in", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "README.md"}, {"id": "tech_stack", "label": "Technical Stack", "nodes": ["README_python314", "README_click_rich", "README_pydantic", "README_uv"], "relation": "implement", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "README.md"}];
+// afterDrawing passes ctx already transformed to network coordinate space.
+// Draw node positions raw — no manual pan/zoom/DPR math needed.
+network.on('afterDrawing', function(ctx) {
+    hyperedges.forEach(h => {
+        const positions = h.nodes
+            .map(nid => network.getPositions([nid])[nid])
+            .filter(p => p !== undefined);
+        if (positions.length < 2) return;
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#6366f1';
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Centroid and expanded hull in network coordinates
+        const cx = positions.reduce((s, p) => s + p.x, 0) / positions.length;
+        const cy = positions.reduce((s, p) => s + p.y, 0) / positions.length;
+        const expanded = positions.map(p => ({
+            x: cx + (p.x - cx) * 1.15,
+            y: cy + (p.y - cy) * 1.15
+        }));
+        ctx.moveTo(expanded[0].x, expanded[0].y);
+        expanded.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 0.4;
+        ctx.stroke();
+        // Label
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#4f46e5';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(h.label, cx, cy - 5);
+        ctx.restore();
+    });
+});
+</script>
+</body>
+</html>
