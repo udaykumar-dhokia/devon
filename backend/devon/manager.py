@@ -75,6 +75,28 @@ class RepoManager:
              raise FileNotFoundError(f"Repository {repo_name} not found.")
         return target_path
 
+    def get_file_tree(self, repo_name: str):
+        repo_path = self.get_repo_path(repo_name)
+        return self._walk_tree(repo_path, repo_path)
+
+    def _walk_tree(self, path: Path, repo_root: Path):
+        name = path.name
+        rel_path = str(path.relative_to(repo_root)).replace("\\", "/")
+        if path.is_dir():
+            children = []
+            try:
+                for entry in sorted(path.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+                    if entry.name in IGNORE_DIRS or entry.name in IGNORE_FILES:
+                        continue
+                    if entry.name.startswith('.') and entry.name != ".devon":
+                        continue
+                    children.append(self._walk_tree(entry, repo_root))
+            except PermissionError:
+                pass
+            return {"name": name, "path": rel_path, "type": "directory", "children": children}
+        else:
+            return {"name": name, "path": rel_path, "type": "file"}
+
     def delete(self, repo_name: str):
         target_path = REPOS_DIR / repo_name
         if not target_path.exists():
@@ -95,3 +117,15 @@ class RepoManager:
                     pass
 
         shutil.rmtree(target_path)
+
+    def read_file(self, repo_name: str, file_path: str) -> str:
+        repo_path = self.get_repo_path(repo_name)
+        full_path = repo_path / file_path
+        
+        if not str(full_path.resolve()).startswith(str(repo_path.resolve())):
+            raise PermissionError("Access denied: Path outside repository bounds.")
+            
+        if not full_path.exists():
+            raise FileNotFoundError(f"File {file_path} not found.")
+            
+        return full_path.read_text(encoding="utf-8")
