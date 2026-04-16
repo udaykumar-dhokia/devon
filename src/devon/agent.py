@@ -10,6 +10,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, An
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
+from devon.persistence import get_issue_checkpoint_path, get_checkpointer
 
 from devon.config import load_config
 from devon.tools import list_directory, read_file, write_file, search
@@ -375,7 +376,7 @@ def build_planner_graph():
 
     graph.add_edge(START, "generate_tasks")
     
-    return graph.compile()
+    return graph
 
 
 def run_agent_plan(prompt: str, repo_path: str, issue_number: int) -> str:
@@ -398,19 +399,23 @@ def run_agent_plan(prompt: str, repo_path: str, issue_number: int) -> str:
             folder_md = f.read()
 
     try:
-        graph = build_planner_graph()
+        db_path = get_issue_checkpoint_path(repo_path, issue_number)
+        
+        with get_checkpointer(db_path) as checkpointer:
+            graph = build_planner_graph().compile(checkpointer=checkpointer)
+            config_run = {"configurable": {"thread_id": f"issue_{issue_number}"}}
 
-        result = graph.invoke({
-            "issue_prompt": prompt,
-            "repo_path": repo_path,
-            "issue_number": issue_number,
-            "folder_md": folder_md,
-            "tasks": [],
-            "file_context": "",
-            "plan": "",
-            "messages": [],
-            "next_node": ""
-        })
+            result = graph.invoke({
+                "issue_prompt": prompt,
+                "repo_path": repo_path,
+                "issue_number": issue_number,
+                "folder_md": folder_md,
+                "tasks": [],
+                "file_context": "",
+                "plan": "",
+                "messages": [],
+                "next_node": ""
+            }, config=config_run)
 
         if result.get("plan"):
             return f"Implementation Plan saved to .devon/issues/{issue_number}/plan.md"

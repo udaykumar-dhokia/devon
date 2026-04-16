@@ -1,8 +1,8 @@
 <div align="center">
 
-<div style="background-color: white; padding: 15px; border-radius: 12px; display: inline-block; margin-bottom: 20px;">
-  <img src="./logo.svg" width="75" height="75" />
-</div>
+<p align="center">
+  <img src="./logo.svg" width="120" />
+</p>
 
 ### Your Autonomous GitHub Issue Coder.
 

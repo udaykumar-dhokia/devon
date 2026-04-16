@@ -1,4 +1,6 @@
 import os
+import unicodedata
+import re
 from pathlib import Path
 from langchain_core.tools import tool
 
@@ -94,10 +96,12 @@ def write_file(path: str, content, **kwargs) -> str:
 
 @tool
 def search_replace(path: str, old_content: str, new_content: str, **kwargs) -> str:
-    """Find and replace exact text in a file.
-    old_content must be an exact substring of the file (including whitespace and indentation).
-    new_content is the replacement. To delete code, pass an empty string for new_content.
-    This tool is safe for multiple edits to the same file — no line-number drift.
+    """Find and replace text in a file.
+    This tool is robust: it handles variations in line endings (LF vs CRLF),
+    trailing whitespace, and Unicode characters (different dash/quote types).
+    
+    The match must be unambiguous (exists exactly once in the file).
+    To delete code, pass an empty string for new_content.
     """
     if is_ignored(path):
         return f"Error: Cannot write to restricted path '{path}'."
@@ -108,30 +112,65 @@ def search_replace(path: str, old_content: str, new_content: str, **kwargs) -> s
 
     try:
         with open(p, "r", encoding="utf-8") as f:
-            content = f.read()
+            raw_content = f.read()
 
-        if old_content not in content:
+        if old_content in raw_content:
+            count = raw_content.count(old_content)
+            if count == 1:
+                updated = raw_content.replace(old_content, new_content, 1)
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(updated)
+                return f"Successfully replaced text in {path} (exact match)"
+            elif count > 1:
+                return f"Error: Found {count} exact occurrences. Provide more context."
+
+        def canonicalize(text: str) -> list[str]:
+            text = unicodedata.normalize("NFKC", text)
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
+            return [line.rstrip() for line in text.split("\n")]
+
+        file_lines = raw_content.splitlines()
+        canon_file = [unicodedata.normalize("NFKC", line).rstrip() for line in file_lines]
+        canon_old = canonicalize(old_content)
+        
+        n = len(canon_file)
+        m = len(canon_old)
+        matches = []
+        
+        for i in range(n - m + 1):
+            if canon_file[i:i+m] == canon_old:
+                matches.append(i)
+        
+        if not matches:
             snippet = old_content[:120].replace('\n', '\\n')
             return (
                 f"Error: Could not find the specified text in {path}.\n"
                 f"Searched for: \"{snippet}...\"\n"
-                f"Hint: Make sure old_content matches the file EXACTLY, including whitespace and indentation. "
-                f"Use read_file first to see the exact content."
+                f"Hint: Checked both exact and robust match. Ensure non-whitespace characters are identical."
             )
+        
+        if len(matches) > 1:
+            return f"Error: Found {len(matches)} potential robust matches. Provide more context."
 
-        count = content.count(old_content)
-        if count > 1:
-            return (
-                f"Error: Found {count} occurrences of the specified text in {path}. "
-                f"Provide a larger, more unique snippet in old_content to match exactly one location."
-            )
-
-        updated = content.replace(old_content, new_content, 1)
+        match_start_line = matches[0]
+        
+        new_file_lines = file_lines[:match_start_line] + [new_content] + file_lines[match_start_line + m:]
+        
+        if "\r\n" in raw_content:
+            eol = "\r\n"
+        else:
+            eol = "\n"
+            
+        updated = eol.join(new_file_lines)
+        
+        if raw_content.endswith("\n") and not updated.endswith("\n"):
+            updated += "\n"
 
         with open(p, "w", encoding="utf-8") as f:
             f.write(updated)
 
-        return f"Successfully replaced text in {path}"
+        return f"Successfully replaced text in {path} (robust match)"
+        
     except Exception as e:
         return f"Error editing file '{path}': {e}"
 

@@ -11,6 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, An
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
+from devon.persistence import get_issue_checkpoint_path, get_checkpointer
 
 from devon.config import load_config
 from devon.tools import list_directory, read_file, write_file, search, search_replace
@@ -100,6 +101,7 @@ class CoderState(TypedDict):
     current_task_index: int
     messages: Annotated[list[AnyMessage], add_messages]
     modified_files: Annotated[list[str], merge_files]
+    last_summary: str
     next_node: str
 
 def _save_tasks(tasks_path: str, tasks_data: dict):
@@ -250,14 +252,27 @@ RULES:
     ]
     new_messages, modified_files = _run_llm_with_tools(llm, messages)
 
+    last_summary = ""
+    if new_messages and hasattr(new_messages[-1], "content"):
+        last_summary = new_messages[-1].content or ""
+
     if len(state.get("messages", [])) + len(new_messages) > 30:
         return Command(
-            update={"messages": new_messages, "modified_files": modified_files, "next_node": "review_task"},
+            update={
+                "messages": new_messages, 
+                "modified_files": modified_files, 
+                "last_summary": last_summary,
+                "next_node": "review_task"
+            },
             goto="summarize_messages"
         )
     else:
         return Command(
-            update={"messages": new_messages, "modified_files": modified_files},
+            update={
+                "messages": new_messages, 
+                "modified_files": modified_files,
+                "last_summary": last_summary
+            },
             goto="review_task"
         )
 
@@ -275,6 +290,33 @@ def review_task(state: CoderState) -> Command:
     return Command(goto="mark_task_done")
 
 
+def update_memory(state: CoderState) -> Command:
+    summary = state.get("last_summary", "")
+    if summary:
+        issue_dir = os.path.join(".devon", "issues", str(state['issue_number']))
+        repo_path = state.get("repo_path")
+        if repo_path:
+            issue_dir = os.path.join(repo_path, issue_dir)
+            
+        os.makedirs(issue_dir, exist_ok=True)
+        memory_path = os.path.join(issue_dir, "memory.md")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        
+        task = state["tasks"][state["current_task_index"]]
+        entry = (
+            f"## [{timestamp}] Task: {task['title']}\n\n"
+            f"{summary}\n\n"
+            f"---\n"
+        )
+        
+        with open(memory_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+            
+        CONSOLE.print(f"[dim]Updated memory.md with summary of Task {task['id']}[/dim]")
+
+    return Command(goto="loop_tasks")
+
+
 def mark_task_done(state: CoderState) -> Command:
     tasks = state["tasks"]
     task = tasks[state["current_task_index"]]
@@ -289,7 +331,7 @@ def mark_task_done(state: CoderState) -> Command:
 
     return Command(
         update={"tasks": tasks},
-        goto="loop_tasks"
+        goto="update_memory"
     )
 
 
@@ -322,12 +364,13 @@ def build_coder_graph():
     graph.add_node("execute_task", execute_task)
     graph.add_node("review_task", review_task)
     graph.add_node("mark_task_done", mark_task_done)
+    graph.add_node("update_memory", update_memory)
     graph.add_node("loop_tasks", loop_tasks)
     graph.add_node("summarize_messages", summarize_messages)
 
     graph.add_edge(START, "load_context")
 
-    return graph.compile()
+    return graph
 
 
 def run_agent_code(repo_path: str, issue_number: int) -> str:
@@ -367,18 +410,23 @@ def run_agent_code(repo_path: str, issue_number: int) -> str:
             with open(".devon/folder.md", "r", encoding="utf-8") as f:
                 folder_md = f.read()
 
-        graph = build_coder_graph()
+        db_path = get_issue_checkpoint_path(repo_path, issue_number)
+        
+        with get_checkpointer(db_path) as checkpointer:
+            graph = build_coder_graph().compile(checkpointer=checkpointer)
+            config_run = {"configurable": {"thread_id": f"issue_{issue_number}"}}
 
-        result = graph.invoke({
-            "repo_path": repo_path,
-            "issue_number": issue_number,
-            "folder_md": folder_md,
-            "plan": plan,
-            "tasks": tasks,
-            "current_task_index": 0,
-            "messages": [],
-            "modified_files": [],
-        })
+            result = graph.invoke({
+                "repo_path": repo_path,
+                "issue_number": issue_number,
+                "folder_md": folder_md,
+                "plan": plan,
+                "tasks": tasks,
+                "current_task_index": 0,
+                "messages": [],
+                "modified_files": [],
+                "last_summary": "",
+            }, config=config_run)
 
         completed = [t for t in result.get("tasks", []) if t["status"] == "done"]
         total = len(result.get("tasks", []))

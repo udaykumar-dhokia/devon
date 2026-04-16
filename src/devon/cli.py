@@ -9,6 +9,7 @@ from rich import box
 from devon.config import load_config
 from devon.github_service import GitHubService
 from devon.manager import RepoManager
+from devon.persistence import get_issue_checkpoint_path
 
 CONSOLE = Console()
 
@@ -376,6 +377,10 @@ def code():
                 repo_path = str(manager.get_repo_path(current_repo))
                 manager.init_devon_workspace(current_repo)
 
+                db_path = get_issue_checkpoint_path(repo_path, issue_number)
+                if os.path.exists(db_path):
+                    CONSOLE.print(f"[bold cyan]OK:[/] Resuming planning session for issue #{issue_number}...")
+                
                 CONSOLE.print("[bold yellow]Running Devon AI Planning Agent...[/]")
                 plan_result = run_agent_plan(prompt, repo_path, issue_number)
                 
@@ -456,6 +461,10 @@ def code():
                 from devon.coder import run_agent_code
 
                 manager.init_devon_workspace(current_repo)
+
+                db_path = get_issue_checkpoint_path(repo_path, issue_number)
+                if os.path.exists(db_path):
+                    CONSOLE.print(f"[bold cyan]OK:[/] Resuming coding session for issue #{issue_number}...")
 
                 CONSOLE.print("[bold yellow]Running Devon AI Coding Agent...[/]")
                 code_result = run_agent_code(repo_path, issue_number)
