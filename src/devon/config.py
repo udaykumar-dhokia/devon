@@ -9,6 +9,9 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 class Config(BaseModel):
     github_username: str
     github_token: SecretStr
+    llm_provider: str = "ollama"
+    llm_base_url: str = "http://localhost:11434"
+    llm_model_name: str = "llama3.1"
 
     def save(self):
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)

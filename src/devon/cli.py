@@ -33,13 +33,88 @@ def main():
 
 @main.command()
 def onboard():
-    """Onboard Devon with GitHub credentials."""
-    from devon.config import Config
+    """Onboard Devon with GitHub credentials and LLM configuration."""
+    from devon.config import Config, load_config
+    import urllib.request
+    import json
 
-    username = click.prompt("Enter your GitHub username")
-    token = click.prompt("Enter your GitHub token", hide_input=True)
+    existing_config = load_config()
 
-    config = Config(github_username=username, github_token=token)
+    current_username = existing_config.github_username if existing_config else None
+    current_token = (
+        existing_config.github_token.get_secret_value() if existing_config else None
+    )
+    current_provider = existing_config.llm_provider if existing_config else "ollama"
+    current_base_url = (
+        existing_config.llm_base_url if existing_config else "http://localhost:11434"
+    )
+    current_model = existing_config.llm_model_name if existing_config else "llama3.1"
+
+    username = click.prompt("Enter your GitHub username", default=current_username)
+
+    if current_token:
+        token_input = click.prompt(
+            "Enter your GitHub token (leave blank to keep current)",
+            default="",
+            show_default=False,
+            hide_input=True,
+        )
+        token = token_input if token_input else current_token
+    else:
+        token = click.prompt("Enter your GitHub token", hide_input=True)
+
+    provider = click.prompt("Enter your LLM Provider", default=current_provider)
+
+    config_kwargs = {
+        "github_username": username,
+        "github_token": token,
+        "llm_provider": provider,
+    }
+
+    if provider.lower() == "ollama":
+        base_url = click.prompt("Enter your Ollama Base URL", default=current_base_url)
+        config_kwargs["llm_base_url"] = base_url
+
+        CONSOLE.print("[bold]Fetching available models from Ollama...[/]")
+        try:
+            url = f"{base_url.rstrip('/')}/api/tags"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                models = [m["name"] for m in data.get("models", [])]
+
+            if models:
+                CONSOLE.print("Available models:")
+                for i, model_name in enumerate(models, 1):
+                    CONSOLE.print(f"{i}. {model_name}")
+
+                default_choice = 1
+                if current_model in models:
+                    default_choice = models.index(current_model) + 1
+
+                choice = click.prompt(
+                    "Select a model by number", type=int, default=default_choice
+                )
+                if 1 <= choice <= len(models):
+                    config_kwargs["llm_model_name"] = models[choice - 1]
+                else:
+                    CONSOLE.print(
+                        f"[yellow]Invalid selection, defaulting to {current_model}[/]"
+                    )
+                    config_kwargs["llm_model_name"] = current_model
+            else:
+                CONSOLE.print(
+                    f"[yellow]No models found. Defaulting to {current_model}[/]"
+                )
+                config_kwargs["llm_model_name"] = current_model
+        except Exception as e:
+            CONSOLE.print(f"[bold red]Failed to fetch models: {e}[/]")
+            CONSOLE.print(f"[yellow]Defaulting to {current_model}[/]")
+            config_kwargs["llm_model_name"] = current_model
+    else:
+        config_kwargs["llm_model_name"] = current_model
+
+    config = Config(**config_kwargs)
     config.save()
 
     print_success(f"Successfully onboarded {username}!")
@@ -131,6 +206,10 @@ def code():
                 table.add_row(
                     "/issues <repo>",
                     "Fetch and display all open issues for a repository.",
+                )
+                table.add_row(
+                    "/plan <issue_number>",
+                    "Run the Devon AI agent to analyze and implement the issue.",
                 )
                 table.add_row(
                     "/delete <repo_name>",
@@ -240,6 +319,54 @@ def code():
                     table.add_row(str(issue.number), issue.title, issue.user.login)
 
                 CONSOLE.print(table)
+
+            elif cmd == "/plan":
+                if not args:
+                    print_error("Usage: /plan <issue_number>")
+                    continue
+
+                if current_repo is None:
+                    print_error(
+                        "Please select a repository first using /use <repo_name>"
+                    )
+                    continue
+
+                try:
+                    issue_number = int(args[0])
+                except ValueError:
+                    print_error("Issue number must be an integer.")
+                    continue
+
+                full_name = (
+                    current_repo
+                    if "/" in current_repo
+                    else f"{config.github_username}/{current_repo}"
+                )
+
+                with CONSOLE.status(
+                    f"[bold]Fetching issue #{issue_number}...", spinner="dots"
+                ):
+                    try:
+                        issue = gh.get_issue(full_name, issue_number)
+                    except Exception as e:
+                        print_error(f"Failed to fetch issue: {e}")
+                        continue
+
+                CONSOLE.print(
+                    f"[bold blue]Planning for Issue #{issue.number}: {issue.title}[/]"
+                )
+
+                prompt = f"Issue #{issue_number}: {issue.title}\n\nDescription:\n{issue.body}"
+
+                from devon.agent import run_agent_plan
+
+                repo_path = str(manager.get_repo_path(current_repo))
+                manager.init_devon_workspace(current_repo)
+
+                CONSOLE.print("[bold yellow]Running Devon AI Planning Agent...[/]")
+                plan_result = run_agent_plan(prompt, repo_path, issue_number)
+                
+                CONSOLE.print(f"\n[bold green]Agent Finished:[/] {plan_result}")
 
             elif cmd == "/delete":
                 if not args:

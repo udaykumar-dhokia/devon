@@ -28,3 +28,8 @@ class GitHubService:
         """Fetch all open issues for a repository."""
         repo = self.gh.get_repo(full_name)
         return list(repo.get_issues(state="open"))
+
+    def get_issue(self, full_name: str, issue_number: int) -> Issue:
+        """Fetch a specific issue by number."""
+        repo = self.gh.get_repo(full_name)
+        return repo.get_issue(number=issue_number)
