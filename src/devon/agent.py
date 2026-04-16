@@ -10,7 +10,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, An
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
-from devon.persistence import get_issue_checkpoint_path, get_checkpointer
+from devon.persistence import get_issue_checkpoint_path, get_checkpointer, append_to_conversation_log
 
 from devon.config import load_config
 from devon.tools import list_directory, read_file, write_file, search
@@ -179,33 +179,36 @@ RULES:
 - After writing tasks.json, respond confirming how many tasks you created.
 """
 
-    messages = [
-        SystemMessage(content=system),
-        HumanMessage(content=f"REPOSITORY STRUCTURE:\n{state['folder_md']}"),
-        HumanMessage(content=state["issue_prompt"]),
-    ]
-    new_messages = _run_llm_with_tools(llm, messages)
+    try:
+        messages = [
+            SystemMessage(content=system),
+            HumanMessage(content=f"REPOSITORY STRUCTURE:\n{state['folder_md']}"),
+            HumanMessage(content=state["issue_prompt"]),
+        ]
+        new_messages = _run_llm_with_tools(llm, messages)
 
-    tasks = []
-    if os.path.exists(tasks_path):
-        with open(tasks_path, "r", encoding="utf-8") as f:
-            tasks_data = json.load(f)
-            tasks = tasks_data.get("tasks", [])
+        tasks = []
+        if os.path.exists(tasks_path):
+            with open(tasks_path, "r", encoding="utf-8") as f:
+                tasks_data = json.load(f)
+                tasks = tasks_data.get("tasks", [])
 
-    if tasks:
-        CONSOLE.print(f"\n[bold green]Created {len(tasks)} tasks:[/]")
-        _print_tasks_table(tasks)
+        if tasks:
+            CONSOLE.print(f"\n[bold green]Created {len(tasks)} tasks:[/]")
+            _print_tasks_table(tasks)
 
-    if len(state["messages"]) + len(new_messages) > 30:
-        return Command(
-            update={"tasks": tasks, "messages": new_messages, "next_node": "review_tasks"},
-            goto="summarize_messages"
-        )
-    else:
-        return Command(
-            update={"tasks": tasks, "messages": new_messages},
-            goto="review_tasks"
-        )
+        if len(state["messages"]) + len(new_messages) > 30:
+            return Command(
+                update={"tasks": tasks, "messages": new_messages, "next_node": "review_tasks"},
+                goto="summarize_messages"
+            )
+        else:
+            return Command(
+                update={"tasks": tasks, "messages": new_messages},
+                goto="review_tasks"
+            )
+    finally:
+        append_to_conversation_log(state.get("repo_path", "."), state["issue_number"], messages + (new_messages if 'new_messages' in locals() else []))
 
 
 def review_tasks(state: PlannerState) -> Command:
@@ -255,27 +258,30 @@ RULES:
 - After exploration, provide a comprehensive summary of what you found for each task.
 """
 
-    messages = [
-        SystemMessage(content=system),
-        HumanMessage(content=f"REPOSITORY STRUCTURE:\n{state['folder_md']}"),
-        HumanMessage(content=f"Explore the codebase for issue #{state['issue_number']}.\n\nTasks:\n{tasks_summary}"),
-    ]
-    new_messages = _run_llm_with_tools(llm, messages)
+    try:
+        messages = [
+            SystemMessage(content=system),
+            HumanMessage(content=f"REPOSITORY STRUCTURE:\n{state['folder_md']}"),
+            HumanMessage(content=f"Explore the codebase for issue #{state['issue_number']}.\n\nTasks:\n{tasks_summary}"),
+        ]
+        new_messages = _run_llm_with_tools(llm, messages)
 
-    file_context = ""
-    if new_messages and hasattr(new_messages[-1], "content"):
-        file_context = new_messages[-1].content or ""
+        file_context = ""
+        if new_messages and hasattr(new_messages[-1], "content"):
+            file_context = new_messages[-1].content or ""
 
-    if len(state["messages"]) + len(new_messages) > 30:
-        return Command(
-            update={"file_context": file_context, "messages": new_messages, "next_node": "generate_plan"},
-            goto="summarize_messages"
-        )
-    else:
-        return Command(
-            update={"file_context": file_context, "messages": new_messages},
-            goto="generate_plan"
-        )
+        if len(state["messages"]) + len(new_messages) > 30:
+            return Command(
+                update={"file_context": file_context, "messages": new_messages, "next_node": "generate_plan"},
+                goto="summarize_messages"
+            )
+        else:
+            return Command(
+                update={"file_context": file_context, "messages": new_messages},
+                goto="generate_plan"
+            )
+    finally:
+        append_to_conversation_log(state.get("repo_path", "."), state["issue_number"], messages + (new_messages if 'new_messages' in locals() else []))
 
 
 def generate_plan(state: PlannerState) -> Command:
@@ -330,28 +336,31 @@ RULES:
 - After writing the plan, confirm the file path.
 """
 
-    messages = [
-        SystemMessage(content=system),
-        HumanMessage(content=f"Generate the implementation plan for issue #{state['issue_number']}."),
-    ]
-    new_messages = _run_llm_with_tools(llm, messages)
+    try:
+        messages = [
+            SystemMessage(content=system),
+            HumanMessage(content=f"Generate the implementation plan for issue #{state['issue_number']}."),
+        ]
+        new_messages = _run_llm_with_tools(llm, messages)
 
-    plan = ""
-    if os.path.exists(plan_path):
-        with open(plan_path, "r", encoding="utf-8") as f:
-            plan = f.read()
-        CONSOLE.print(f"\n[bold green]Plan saved to:[/] {plan_path}")
+        plan = ""
+        if os.path.exists(plan_path):
+            with open(plan_path, "r", encoding="utf-8") as f:
+                plan = f.read()
+            CONSOLE.print(f"\n[bold green]Plan saved to:[/] {plan_path}")
 
-    if len(state["messages"]) + len(new_messages) > 30:
-        return Command(
-            update={"plan": plan, "messages": new_messages, "next_node": "review_plan"},
-            goto="summarize_messages"
-        )
-    else:
-        return Command(
-            update={"plan": plan, "messages": new_messages},
-            goto="review_plan"
-        )
+        if len(state["messages"]) + len(new_messages) > 30:
+            return Command(
+                update={"plan": plan, "messages": new_messages, "next_node": "review_plan"},
+                goto="summarize_messages"
+            )
+        else:
+            return Command(
+                update={"plan": plan, "messages": new_messages},
+                goto="review_plan"
+            )
+    finally:
+        append_to_conversation_log(state.get("repo_path", "."), state["issue_number"], messages + (new_messages if 'new_messages' in locals() else []))
 
 
 def review_plan(state: PlannerState) -> Command:

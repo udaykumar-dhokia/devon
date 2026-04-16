@@ -11,7 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, An
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
-from devon.persistence import get_issue_checkpoint_path, get_checkpointer
+from devon.persistence import get_issue_checkpoint_path, get_checkpointer, append_to_conversation_log
 
 from devon.config import load_config
 from devon.tools import list_directory, read_file, write_file, search, search_replace
@@ -251,6 +251,8 @@ RULES:
         HumanMessage(content=f"Execute this task:\n\nTitle: {task['title']}\nDescription: {task['description']}"),
     ]
     new_messages, modified_files = _run_llm_with_tools(llm, messages)
+    
+    append_to_conversation_log(state.get("repo_path", "."), state["issue_number"], messages + new_messages)
 
     last_summary = ""
     if new_messages and hasattr(new_messages[-1], "content"):
