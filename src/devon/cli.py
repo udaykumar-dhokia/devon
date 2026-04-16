@@ -1,5 +1,5 @@
 import click
-import sys
+import os
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -209,11 +209,24 @@ def code():
                 )
                 table.add_row(
                     "/plan <issue_number>",
-                    "Run the Devon AI agent to analyze and implement the issue.",
+                    "Analyze an issue and generate a structured implementation plan.",
+                )
+                table.add_row(
+                    "/code <issue_number>",
+                    "Execute the implementation plan and write code for an issue.",
                 )
                 table.add_row(
                     "/delete <repo_name>",
                     "Completely remove a repository folder from your local system.",
+                )
+                table.add_row(
+                    "/provider", "Display the current LLM provider."
+                )
+                table.add_row(
+                    "/model [name]", "View or change the current LLM model."
+                )
+                table.add_row(
+                    "/models", "List available models for the current provider."
                 )
                 table.add_row(
                     "/help",
@@ -367,6 +380,125 @@ def code():
                 plan_result = run_agent_plan(prompt, repo_path, issue_number)
                 
                 CONSOLE.print(f"\n[bold green]Agent Finished:[/] {plan_result}")
+
+            elif cmd == "/code":
+                if not args:
+                    print_error("Usage: /code <issue_number> or /code <issue_name>")
+                    continue
+
+                if current_repo is None:
+                    print_error("Please select a repository first using /use <repo_name>")
+                    continue
+
+                issue_query = args[0]
+                issue_number = None
+
+                try:
+                    issue_number = int(issue_query)
+                except ValueError:
+                    full_name = (
+                        current_repo
+                        if "/" in current_repo
+                        else f"{config.github_username}/{current_repo}"
+                    )
+                    with CONSOLE.status(f"[bold]Searching for issue '{issue_query}'...", spinner="dots"):
+                        try:
+                            issues = gh.get_repo_issues(full_name)
+                            matches = [i for i in issues if issue_query.lower() in i.title.lower()]
+                            
+                            if not matches:
+                                print_error(f"No issue found matching '{issue_query}'.")
+                                continue
+                            elif len(matches) > 1:
+                                CONSOLE.print(f"[yellow]Multiple issues matching '{issue_query}':[/]")
+                                for m in matches:
+                                    CONSOLE.print(f"  #{m.number}: {m.title}")
+                                print_error("Please use /code <issue_number> for exact selection.")
+                                continue
+                            else:
+                                issue_number = matches[0].number
+                                CONSOLE.print(f"[green]Found issue #{issue_number}: {matches[0].title}[/]")
+                        except Exception as e:
+                            print_error(f"Failed to search issues: {e}")
+                            continue
+
+                repo_path = str(manager.get_repo_path(current_repo))
+                issue_dir = os.path.join(repo_path, ".devon", "issues", str(issue_number))
+                tasks_file = os.path.join(issue_dir, "tasks.json")
+                plan_file = os.path.join(issue_dir, "plan.md")
+
+                if not os.path.exists(tasks_file) or not os.path.exists(plan_file):
+                    print_error(
+                        f"Incomplete plan for issue #{issue_number}. "
+                        f"Please run [bold]/plan {issue_number}[/] fully before coding."
+                    )
+                    continue
+
+                full_name = (
+                    current_repo
+                    if "/" in current_repo
+                    else f"{config.github_username}/{current_repo}"
+                )
+
+                with CONSOLE.status(
+                    f"[bold]Verifying issue #{issue_number}...", spinner="dots"
+                ):
+                    try:
+                        issue = gh.get_issue(full_name, issue_number)
+                    except Exception as e:
+                        print_error(f"Failed to fetch issue: {e}")
+                        continue
+
+                CONSOLE.print(
+                    f"[bold blue]Coding for Issue #{issue.number}: {issue.title}[/]"
+                )
+
+                from devon.coder import run_agent_code
+
+                manager.init_devon_workspace(current_repo)
+
+                CONSOLE.print("[bold yellow]Running Devon AI Coding Agent...[/]")
+                code_result = run_agent_code(repo_path, issue_number)
+
+                CONSOLE.print(f"\n[bold green]Agent Finished:[/] {code_result}")
+
+            elif cmd == "/provider":
+                CONSOLE.print(f"[bold]Current Provider:[/] {config.llm_provider}")
+
+            elif cmd == "/model":
+                if not args:
+                    CONSOLE.print(f"[bold]Current Model:[/] {config.llm_model_name}")
+                else:
+                    new_model = args[0]
+                    config.llm_model_name = new_model
+                    config.save()
+                    CONSOLE.print(f"[bold green]Model updated to:[/] {new_model}")
+
+            elif cmd == "/models":
+                if config.llm_provider.lower() == "ollama":
+                    import urllib.request
+                    import json
+                    CONSOLE.print(f"[bold]Fetching models from {config.llm_base_url}...[/]")
+                    try:
+                        url = f"{config.llm_base_url.rstrip('/')}/api/tags"
+                        req = urllib.request.Request(url)
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            data = json.loads(response.read().decode())
+                            models = [m["name"] for m in data.get("models", [])]
+                        
+                        if models:
+                            table = Table(title="Available Ollama Models", box=box.ROUNDED)
+                            table.add_column("Model Name")
+                            for model_name in sorted(models):
+                                style = "bold green" if model_name == config.llm_model_name else ""
+                                table.add_row(model_name, style=style)
+                            CONSOLE.print(table)
+                        else:
+                            CONSOLE.print("[yellow]No models found.[/]")
+                    except Exception as e:
+                        CONSOLE.print(f"[bold red]Failed to fetch models:[/] {e}")
+                else:
+                    CONSOLE.print(f"[yellow]/models is currently only supported for Ollama provider.[/]")
 
             elif cmd == "/delete":
                 if not args:

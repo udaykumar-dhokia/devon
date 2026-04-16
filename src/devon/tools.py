@@ -93,6 +93,51 @@ def write_file(path: str, content, **kwargs) -> str:
         return f"Error writing to file '{path}': {e}"
 
 @tool
+def search_replace(path: str, old_content: str, new_content: str, **kwargs) -> str:
+    """Find and replace exact text in a file.
+    old_content must be an exact substring of the file (including whitespace and indentation).
+    new_content is the replacement. To delete code, pass an empty string for new_content.
+    This tool is safe for multiple edits to the same file — no line-number drift.
+    """
+    if is_ignored(path):
+        return f"Error: Cannot write to restricted path '{path}'."
+
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return f"Error: Path '{path}' does not exist or is not a readable file."
+
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if old_content not in content:
+            snippet = old_content[:120].replace('\n', '\\n')
+            return (
+                f"Error: Could not find the specified text in {path}.\n"
+                f"Searched for: \"{snippet}...\"\n"
+                f"Hint: Make sure old_content matches the file EXACTLY, including whitespace and indentation. "
+                f"Use read_file first to see the exact content."
+            )
+
+        count = content.count(old_content)
+        if count > 1:
+            return (
+                f"Error: Found {count} occurrences of the specified text in {path}. "
+                f"Provide a larger, more unique snippet in old_content to match exactly one location."
+            )
+
+        updated = content.replace(old_content, new_content, 1)
+
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(updated)
+
+        return f"Successfully replaced text in {path}"
+    except Exception as e:
+        return f"Error editing file '{path}': {e}"
+
+
+
+@tool
 def search(query: str, path: str = ".", **kwargs) -> str:
     """Searches for a text query in the given directory path.
     Ignored directories are skipped.

@@ -39,7 +39,10 @@ def _execute_tools(tool_calls: list) -> list[ToolMessage]:
         tool_args = tc["args"]
 
         CONSOLE.print(f"  [bold cyan]Tool:[/] {tool_name}")
-        CONSOLE.print(f"  [dim]{tool_args}[/dim]")
+        args_str = str(tool_args)
+        if len(args_str) > 500:
+            args_str = args_str[:500] + "... (truncated)"
+        CONSOLE.print(f"  [dim]{args_str}[/dim]")
 
         tool_fn = TOOL_MAP.get(tool_name)
         if not tool_fn:
@@ -168,6 +171,10 @@ RULES:
 - Task descriptions MUST include file paths and exact changes needed.
 - DO NOT implement anything. Only analyze and plan.
 - DO NOT call the same tool with the same arguments twice.
+- **CRITICAL**: Use `write_file(path, content)` with EXACTLY these parameter names. DO NOT use `contents`.
+- **CRITICAL**: The `tasks.json` file MUST be written to the exact path: '{tasks_path}'. NEVER write it to source directories like `src/` or `frontend/`.
+- Output ONLY valid JSON tool calls. Do not provide any conversational text, explanations, or markdown code fences.
+- Do not repeat tool arguments outside the JSON object.
 - After writing tasks.json, respond confirming how many tasks you created.
 """
 
@@ -241,6 +248,9 @@ RULES:
 - Use `search` to find functions/classes mentioned in the tasks.
 - DO NOT modify any files. This is read-only exploration.
 - DO NOT call the same tool with the same arguments twice.
+- **CRITICAL**: When using tools, use EXACT parameter names (e.g., `path`, `content`, `query`).
+- Output ONLY valid JSON tool calls. Do not provide any conversational text or explanations.
+- Do not repeat tool arguments outside the JSON object.
 - After exploration, provide a comprehensive summary of what you found for each task.
 """
 
@@ -310,8 +320,12 @@ The plan MUST be a well-structured markdown document with:
 RULES:
 - NEVER explore or list the .devon/ directory.
 - Write the plan to '{plan_path}' using `write_file`. This is MANDATORY.
+- **CRITICAL**: Use `write_file(path, content)` with EXACTLY these parameter names. DO NOT use `contents`.
+- **CRITICAL**: The `plan.md` file MUST be written to the exact path: '{plan_path}'. NEVER write it to source directories like `src/` or `frontend/`.
 - The plan must be specific enough that a developer can implement it without guessing.
 - Reference actual file paths, function names, and code patterns you discovered.
+- Output ONLY valid JSON tool calls. Do not provide any conversational text or explanations.
+- Do not repeat tool arguments outside the JSON object.
 - After writing the plan, confirm the file path.
 """
 
