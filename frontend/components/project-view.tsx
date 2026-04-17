@@ -14,6 +14,7 @@ import { EditorView } from "@/components/editor-view";
 import { DevonAPI } from "@/lib/api";
 import { X, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SidebarTrigger } from "./ui/sidebar";
 
 interface Tab {
   id: string;
@@ -24,9 +25,17 @@ interface Tab {
 
 interface ProjectViewProps {
   projectName: string;
+  config: any;
+  onConfigUpdate: (newConfig: any) => void;
+  onProjectChange: (name: string) => void;
 }
 
-export function ProjectView({ projectName }: ProjectViewProps) {
+export function ProjectView({
+  projectName,
+  config,
+  onConfigUpdate,
+  onProjectChange,
+}: ProjectViewProps) {
   const [tree, setTree] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [tabs, setTabs] = React.useState<Tab[]>([
@@ -73,6 +82,7 @@ export function ProjectView({ projectName }: ProjectViewProps) {
     <div className="flex flex-col h-full bg-background overflow-hidden relative">
       <header className="flex h-12 shrink-0 items-center justify-between px-6 border-b bg-background/50 backdrop-blur-md z-10">
         <div className="flex items-center gap-2 overflow-hidden">
+          <SidebarTrigger />
           <h1 className="text-xs font-semibold truncate tracking-wider opacity-80 uppercase">
             {projectName}
           </h1>
@@ -97,19 +107,19 @@ export function ProjectView({ projectName }: ProjectViewProps) {
                     key={tab.id}
                     onClick={() => setActiveTabId(tab.id)}
                     className={cn(
-                      "group flex items-center h-8 px-4 gap-2 cursor-pointer transition-all relative min-w-[120px] max-w-[200px] rounded-lg select-none",
+                      "group flex justify-between items-center h-8 px-4 gap-2 cursor-pointer transition-all relative min-w-[120px] max-w-[200px] rounded-none select-none",
                       activeTabId === tab.id
                         ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-zinc-200 dark:ring-zinc-700"
                         : "text-muted-foreground hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 hover:text-foreground",
                     )}
                   >
-                    <span className="text-[11px] font-semibold truncate flex-1 tracking-wide">
+                    <span className="text-xs font-semibold truncate flex-1 tracking-wide">
                       {tab.title}
                     </span>
                     {tab.id !== "chat" && (
                       <button
                         onClick={(e) => closeTab(e, tab.id)}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-opacity cursor-pointer"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded-none hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-opacity cursor-pointer"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -130,11 +140,18 @@ export function ProjectView({ projectName }: ProjectViewProps) {
                   className="h-full w-full"
                 >
                   {tabs.find((t) => t.id === activeTabId)?.type === "chat" ? (
-                    <ChatInterface projectName={projectName} />
+                    <ChatInterface
+                      projectName={projectName}
+                      config={config}
+                      onConfigUpdate={onConfigUpdate}
+                      onProjectChange={onProjectChange}
+                    />
                   ) : (
                     <EditorView
                       repoName={projectName}
-                      filePath={tabs.find((t) => t.id === activeTabId)?.path || ""}
+                      filePath={
+                        tabs.find((t) => t.id === activeTabId)?.path || ""
+                      }
                     />
                   )}
                 </motion.div>
@@ -151,8 +168,8 @@ export function ProjectView({ projectName }: ProjectViewProps) {
           >
             <div className="flex flex-col h-full">
               <div className="h-10 py-6 px-6 flex items-center bg-white/40 dark:bg-zinc-950/40">
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground/60">
-                  Explorer
+                <span className="text-[10px] font-bold text-muted-foreground/60">
+                  File Explorer
                 </span>
               </div>
               <ScrollArea className="flex-1 no-scrollbar">

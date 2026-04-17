@@ -3,14 +3,14 @@ import json
 import click
 import operator
 from datetime import datetime, timezone
-from typing import TypedDict, Annotated, Literal
+from typing import TypedDict, Annotated, Literal, Optional
 from operator import add
 
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AnyMessage, RemoveMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 from devon.persistence import get_issue_checkpoint_path, get_checkpointer, append_to_conversation_log
 
 from devon.config import load_config
@@ -19,7 +19,14 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-CONSOLE = Console()
+_GLOBAL_CONSOLE = Console()
+
+def set_global_console(console: Console):
+    global _GLOBAL_CONSOLE
+    _GLOBAL_CONSOLE = console
+
+def get_console() -> Console:
+    return _GLOBAL_CONSOLE
 MAX_TOOL_RESULT_LENGTH = 8000
 SAFETY_LIMIT = 100
 
@@ -41,11 +48,7 @@ def _execute_tools(tool_calls: list) -> tuple[list[ToolMessage], list[str]]:
         tool_name = tc["name"]
         tool_args = tc["args"]
 
-        CONSOLE.print(f"  [bold cyan]Tool:[/] {tool_name}")
-        args_str = str(tool_args)
-        if len(args_str) > 500:
-            args_str = args_str[:500] + "... (truncated)"
-        CONSOLE.print(f"  [dim]{args_str}[/dim]")
+        get_console().log_tool_call(tool_name, tool_args)
 
         if tool_name in ("write_file", "search_replace") and "path" in tool_args:
             modified_files.append(tool_args["path"])
@@ -60,8 +63,7 @@ def _execute_tools(tool_calls: list) -> tuple[list[ToolMessage], list[str]]:
                 result = f"Error executing tool '{tool_name}': {e}"
 
         truncated = _truncate(str(result))
-        preview = truncated[:200] + ("..." if len(truncated) > 200 else "")
-        CONSOLE.print(f"  [green]Result:[/] {preview}\n")
+        get_console().log_tool_result(truncated)
 
         results.append(ToolMessage(content=truncated, tool_call_id=tc["id"]))
     return results, modified_files
@@ -127,23 +129,23 @@ def _print_tasks_table(tasks: list):
             t["title"],
             status_styles.get(t["status"], t["status"]),
         )
-    CONSOLE.print(table)
+    get_console().print(table)
 
 
 def load_context(state: CoderState) -> Command:
-    CONSOLE.print("\n[bold yellow]═══ Phase: Loading Context ═══[/]\n")
+    get_console().log_phase("Loading Context")
 
     tasks = state["tasks"]
     pending = [i for i, t in enumerate(tasks) if t["status"] in ("pending", "in_progress")]
 
     if not pending:
-        CONSOLE.print("[bold green]All tasks are already completed![/]")
+        get_console().print("[bold green]All tasks are already completed![/]")
         return Command(goto=END)
 
     current_index = pending[0]
     task = tasks[current_index]
 
-    CONSOLE.print(f"[bold]Starting with Task {task['id']}/{len(tasks)}:[/] {task['title']}")
+    get_console().print(f"[bold]Starting with Task {task['id']}/{len(tasks)}:[/] {task['title']}")
     _print_tasks_table(tasks)
 
     return Command(
@@ -153,7 +155,7 @@ def load_context(state: CoderState) -> Command:
 
 
 def summarize_messages(state: CoderState) -> Command:
-    CONSOLE.print("\n[dim]Context window exceeded. Summarizing memory...[/dim]\n")
+    get_console().print("\n[dim]Context window exceeded. Summarizing memory...[/dim]\n")
     
     config = load_config()
     llm = ChatOllama(
@@ -188,8 +190,8 @@ def summarize_messages(state: CoderState) -> Command:
 def execute_task(state: CoderState) -> Command:
     task = state["tasks"][state["current_task_index"]]
 
-    CONSOLE.print(f"\n[bold yellow]═══ Phase: Executing Task {task['id']} ═══[/]\n")
-    CONSOLE.print(f"[bold magenta]{task['title']}[/]\n")
+    get_console().log_phase(f"Executing Task {task['id']}")
+    get_console().print(f"[bold magenta]{task['title']}[/]\n")
 
     config = load_config()
     llm = ChatOllama(
@@ -259,6 +261,7 @@ RULES:
         last_summary = new_messages[-1].content or ""
 
     if len(state.get("messages", [])) + len(new_messages) > 30:
+        get_console().log_status(f"Waiting for user feedback on task {task['id']}...")
         return Command(
             update={
                 "messages": new_messages, 
@@ -269,6 +272,7 @@ RULES:
             goto="summarize_messages"
         )
     else:
+        get_console().log_status(f"Waiting for user feedback on task {task['id']}...")
         return Command(
             update={
                 "messages": new_messages, 
@@ -281,10 +285,13 @@ RULES:
 
 def review_task(state: CoderState) -> Command:
     task = state["tasks"][state["current_task_index"]]
-    CONSOLE.print(f"\n[bold cyan]Task {task['id']}: {task['title']}[/]")
-
-    feedback = click.prompt("\nAny changes to this task? (Leave blank to approve)", default="", show_default=False)
-    if feedback.strip():
+    get_console().print(f"\n[bold cyan]Task {task['id']}: {task['title']}[/]")
+    feedback = interrupt({
+        "question": "Any changes to this task? (Leave blank to approve)",
+        "task": task
+    })
+    
+    if isinstance(feedback, str) and feedback.strip():
         return Command(
             update={"messages": [HumanMessage(content=f"User feedback: {feedback}")]},
             goto="execute_task"
@@ -314,7 +321,7 @@ def update_memory(state: CoderState) -> Command:
         with open(memory_path, "a", encoding="utf-8") as f:
             f.write(entry)
             
-        CONSOLE.print(f"[dim]Updated memory.md with summary of Task {task['id']}[/dim]")
+        get_console().print(f"[dim]Updated memory.md with summary of Task {task['id']}[/dim]")
 
     return Command(goto="loop_tasks")
 
@@ -329,7 +336,7 @@ def mark_task_done(state: CoderState) -> Command:
     task["completed_at"] = datetime.now(timezone.utc).isoformat()
     _save_tasks(tasks_path, {"issue_number": state["issue_number"], "tasks": tasks})
 
-    CONSOLE.print(f"[bold green]✓ Task {task['id']} completed[/]\n")
+    get_console().print(f"[bold green]✓ Task {task['id']} completed[/]\n")
 
     return Command(
         update={"tasks": tasks},
@@ -342,14 +349,14 @@ def loop_tasks(state: CoderState) -> Command:
     pending = [i for i, t in enumerate(tasks) if t["status"] in ("pending", "in_progress")]
 
     if not pending:
-        CONSOLE.print("\n[bold yellow]═══ Summary ═══[/]")
+        get_console().print("\n[bold yellow]═══ Summary ═══[/]")
         _print_tasks_table(tasks)
         return Command(goto=END)
 
     next_index = pending[0]
     next_task = tasks[next_index]
 
-    CONSOLE.print(f"[bold]Next: Task {next_task['id']}/{len(tasks)}:[/] {next_task['title']}\n")
+    get_console().print(f"[bold]Next: Task {next_task['id']}/{len(tasks)}:[/] {next_task['title']}\n")
 
     delete_msgs = [RemoveMessage(id=m.id) for m in state["messages"] if m.id is not None]
 
@@ -375,7 +382,7 @@ def build_coder_graph():
     return graph
 
 
-def run_agent_code(repo_path: str, issue_number: int) -> str:
+def run_agent_code(repo_path: str, issue_number: int, feedback: Optional[str] = None) -> str:
     config = load_config()
     if not config:
         return "Error: Devon is not configured."
@@ -439,9 +446,9 @@ def run_agent_code(repo_path: str, issue_number: int) -> str:
             table.add_column("File Path")
             for f in sorted(list(set(modified))):
                 table.add_row(f)
-            CONSOLE.print("\n")
-            CONSOLE.print(table)
-            CONSOLE.print("\n")
+            get_console().print("\n")
+            get_console().print(table)
+            get_console().print("\n")
 
         return f"Coding complete. {len(completed)}/{total} tasks done."
 

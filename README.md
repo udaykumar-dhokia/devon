@@ -1,10 +1,10 @@
 <div align="center">
 
 <p align="center">
-  <img src="./logo.svg" width="120" />
+  <img src="./logo-bg.svg" width="80" />
 </p>
 
-### Your Autonomous GitHub Issue Coder.
+# Devon - Your Autonomous GitHub Colleague.
 
 **Stop managing issues. Start shipping solutions.**
 

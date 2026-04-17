@@ -84,7 +84,12 @@ export default function Home() {
               <SidebarInset className="overflow-hidden h-full flex flex-col">
                 {selectedRepo ? (
                   <div className="flex-1 min-h-0 h-full">
-                    <ProjectView projectName={selectedRepo} />
+                    <ProjectView 
+                      projectName={selectedRepo} 
+                      config={config}
+                      onConfigUpdate={handleUpdate}
+                      onProjectChange={setSelectedRepo}
+                    />
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-muted-foreground p-8">

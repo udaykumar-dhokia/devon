@@ -109,7 +109,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <Card className="w-[450px] shadow-lg border-2">
               <CardHeader className="space-y-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-primary rounded-md">
+                  <div className="p-2 bg-primary rounded-none">
                     <GitBranchPlus className="w-5 h-5 text-primary-foreground" />
                   </div>
                   <CardTitle className="text-2xl">Identity</CardTitle>
@@ -171,10 +171,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <Card className="w-[450px] shadow-lg border-2">
               <CardHeader className="space-y-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-primary rounded-md">
+                  <div className="p-2 bg-primary rounded-none">
                     <Server className="w-5 h-5 text-primary-foreground" />
                   </div>
-                  <CardTitle className="text-2xl">Agent Engine</CardTitle>
+                  <CardTitle className="text-2xl">LLM Settings</CardTitle>
                 </div>
                 <CardDescription>
                   Choose the LLM provider and model for your workspace.

@@ -73,4 +73,48 @@ export class DevonAPI {
     const data = await response.json();
     return data.content;
   }
+
+  static async listIssues(repoName: string) {
+    const url = await this.getUrl();
+    const response = await fetch(`${url}/repos/${repoName}/issues`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch issues");
+    }
+    return response.json();
+  }
+
+  static async executeCommand(repoName: string, command: string) {
+    const url = await this.getUrl();
+    const response = await fetch(`${url}/repos/${repoName}/command`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to execute command");
+    }
+    return response.json();
+  }
+
+  static async getAgentLogs(repoName: string, issueNumber: number) {
+    const url = await this.getUrl();
+    const response = await fetch(`${url}/agent/logs/${repoName}/${issueNumber}`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch agent logs");
+    }
+    return response.json();
+  }
+
+  static async provideFeedback(repoName: string, issueNumber: number, feedback: string) {
+    const url = await this.getUrl();
+    const response = await fetch(`${url}/agent/input/${repoName}/${issueNumber}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feedback }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to submit feedback");
+    }
+    return response.json();
+  }
 }

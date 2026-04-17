@@ -62,15 +62,13 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <a href="#">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Command className="size-4" />
-                </div>
+                <img src="./logo-white.svg" className="w-8 h-8" />
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold text-white">
-                    Devon AI
+                    Devon
                   </span>
-                  <span className="truncate text-xs text-muted-foreground uppercase opacity-70">
-                    Desktop Engine
+                  <span className="truncate text-xs text-muted-foreground opacity-70">
+                    GitHub Colleague
                   </span>
                 </div>
               </a>
@@ -84,7 +82,7 @@ export function AppSidebar({
           <SidebarGroupLabel>Active Projects</SidebarGroupLabel>
           {state === "expanded" && (
             <div className="px-2 pb-2">
-              <div className="relative">
+              <div className="relative mb-6">
                 <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground opacity-50" />
                 <SidebarInput
                   placeholder="Search projects..."
@@ -117,12 +115,9 @@ export function AppSidebar({
                         onClick={() => onSelectRepo(repo.name)}
                         className="cursor-pointer"
                       >
-                        <Folder className="text-primary/60" />
+                        <Folder className="text-chart-2" />
                         <span className="font-medium">{repo.name}</span>
                       </SidebarMenuButton>
-                      <SidebarMenuAction className="cursor-pointer">
-                        <Plus className="size-4" />
-                      </SidebarMenuAction>
                     </SidebarMenuItem>
                   </motion.div>
                 ))
@@ -140,15 +135,9 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem className="flex items-center justify-between p-2">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
-                <Box className="size-4" />
-              </div>
               <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
                 <span className="truncate font-medium">
                   {config.github_username || "User"}
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  Agent Active
                 </span>
               </div>
             </div>

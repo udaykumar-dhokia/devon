@@ -2,14 +2,14 @@ import os
 import json
 import click
 from datetime import datetime, timezone
-from typing import TypedDict, Annotated, Literal
+from typing import TypedDict, Annotated, Literal, Optional
 from operator import add
 
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AnyMessage, RemoveMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 from devon.persistence import get_issue_checkpoint_path, get_checkpointer, append_to_conversation_log
 
 from devon.config import load_config
@@ -18,7 +18,14 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-CONSOLE = Console()
+_GLOBAL_CONSOLE = Console()
+
+def set_global_console(console: Console):
+    global _GLOBAL_CONSOLE
+    _GLOBAL_CONSOLE = console
+
+def get_console() -> Console:
+    return _GLOBAL_CONSOLE
 MAX_TOOL_RESULT_LENGTH = 8000
 SAFETY_LIMIT = 100
 
@@ -38,12 +45,7 @@ def _execute_tools(tool_calls: list) -> list[ToolMessage]:
     for tc in tool_calls:
         tool_name = tc["name"]
         tool_args = tc["args"]
-
-        CONSOLE.print(f"  [bold cyan]Tool:[/] {tool_name}")
-        args_str = str(tool_args)
-        if len(args_str) > 500:
-            args_str = args_str[:500] + "... (truncated)"
-        CONSOLE.print(f"  [dim]{args_str}[/dim]")
+        get_console().log_tool_call(tool_name, tool_args)
 
         tool_fn = TOOL_MAP.get(tool_name)
         if not tool_fn:
@@ -55,8 +57,7 @@ def _execute_tools(tool_calls: list) -> list[ToolMessage]:
                 result = f"Error executing tool '{tool_name}': {e}"
 
         truncated = _truncate(str(result))
-        preview = truncated[:200] + ("..." if len(truncated) > 200 else "")
-        CONSOLE.print(f"  [green]Result:[/] {preview}\n")
+        get_console().log_tool_result(truncated)
 
         results.append(ToolMessage(content=truncated, tool_call_id=tc["id"]))
     return results
@@ -94,7 +95,7 @@ class PlannerState(TypedDict):
 
 
 def summarize_messages(state: PlannerState) -> Command:
-    CONSOLE.print("\n[dim]Context window exceeded. Summarizing memory...[/dim]\n")
+    get_console().print("\n[dim]Context window exceeded. Summarizing memory...[/dim]\n")
     
     config = load_config()
     llm = ChatOllama(
@@ -127,7 +128,9 @@ def summarize_messages(state: PlannerState) -> Command:
 
 
 def generate_tasks(state: PlannerState) -> Command:
-    CONSOLE.print("\n[bold yellow]═══ Phase: Task Generation ═══[/]\n")
+    get_console().log_phase("Task Generation")
+    messages = []
+    new_messages = []
 
     config = load_config()
     llm = ChatOllama(
@@ -194,9 +197,10 @@ RULES:
                 tasks = tasks_data.get("tasks", [])
 
         if tasks:
-            CONSOLE.print(f"\n[bold green]Created {len(tasks)} tasks:[/]")
+            get_console().print(f"\n[bold green]Created {len(tasks)} tasks:[/]")
             _print_tasks_table(tasks)
 
+        get_console().log_status("Waiting for user feedback on tasks...")
         if len(state["messages"]) + len(new_messages) > 30:
             return Command(
                 update={"tasks": tasks, "messages": new_messages, "next_node": "review_tasks"},
@@ -212,8 +216,12 @@ RULES:
 
 
 def review_tasks(state: PlannerState) -> Command:
-    feedback = click.prompt("\nAny changes to tasks? (Leave blank to approve)", default="", show_default=False)
-    if feedback.strip():
+    feedback = interrupt({
+        "question": "Any changes to tasks? (Leave blank to approve)",
+        "tasks": state["tasks"]
+    })
+    
+    if isinstance(feedback, str) and feedback.strip():
         return Command(
             update={"messages": [HumanMessage(content=f"User feedback on tasks: {feedback}")]},
             goto="generate_tasks"
@@ -222,7 +230,9 @@ def review_tasks(state: PlannerState) -> Command:
 
 
 def understand_codebase(state: PlannerState) -> Command:
-    CONSOLE.print("\n[bold yellow]═══ Phase: Codebase Understanding ═══[/]\n")
+    get_console().log_phase("Codebase Understanding")
+    messages = []
+    new_messages = []
 
     config = load_config()
     llm = ChatOllama(
@@ -285,7 +295,9 @@ RULES:
 
 
 def generate_plan(state: PlannerState) -> Command:
-    CONSOLE.print("\n[bold yellow]═══ Phase: Implementation Plan Generation ═══[/]\n")
+    get_console().log_phase("Implementation Plan Generation")
+    messages = []
+    new_messages = []
 
     config = load_config()
     llm = ChatOllama(
@@ -347,8 +359,9 @@ RULES:
         if os.path.exists(plan_path):
             with open(plan_path, "r", encoding="utf-8") as f:
                 plan = f.read()
-            CONSOLE.print(f"\n[bold green]Plan saved to:[/] {plan_path}")
+            get_console().print(f"\n[bold green]Plan saved to:[/] {plan_path}")
 
+        get_console().log_status("Waiting for user feedback on plan...")
         if len(state["messages"]) + len(new_messages) > 30:
             return Command(
                 update={"plan": plan, "messages": new_messages, "next_node": "review_plan"},
@@ -364,8 +377,12 @@ RULES:
 
 
 def review_plan(state: PlannerState) -> Command:
-    feedback = click.prompt("\nAny changes to the plan? (Leave blank to approve)", default="", show_default=False)
-    if feedback.strip():
+    feedback = interrupt({
+        "question": "Any changes to the plan? (Leave blank to approve)",
+        "plan": state["plan"]
+    })
+    
+    if isinstance(feedback, str) and feedback.strip():
         return Command(
             update={"messages": [HumanMessage(content=f"User feedback on plan: {feedback}")]},
             goto="generate_plan"
@@ -388,7 +405,7 @@ def build_planner_graph():
     return graph
 
 
-def run_agent_plan(prompt: str, repo_path: str, issue_number: int) -> str:
+def run_agent_plan(prompt: str, repo_path: str, issue_number: int, feedback: Optional[str] = None) -> str:
     config = load_config()
     if not config:
         return "Error: Devon is not configured."
@@ -414,17 +431,24 @@ def run_agent_plan(prompt: str, repo_path: str, issue_number: int) -> str:
             graph = build_planner_graph().compile(checkpointer=checkpointer)
             config_run = {"configurable": {"thread_id": f"issue_{issue_number}"}}
 
-            result = graph.invoke({
-                "issue_prompt": prompt,
-                "repo_path": repo_path,
-                "issue_number": issue_number,
-                "folder_md": folder_md,
-                "tasks": [],
-                "file_context": "",
-                "plan": "",
-                "messages": [],
-                "next_node": ""
-            }, config=config_run)
+            if feedback is not None:
+                result = graph.invoke(Command(resume=feedback), config=config_run)
+            else:
+                state = graph.get_state(config_run)
+                if state.values:
+                    result = graph.invoke(None, config=config_run)
+                else:
+                    result = graph.invoke({
+                        "issue_prompt": prompt,
+                        "repo_path": repo_path,
+                        "issue_number": issue_number,
+                        "folder_md": folder_md,
+                        "tasks": [],
+                        "file_context": "",
+                        "plan": "",
+                        "messages": [],
+                        "next_node": ""
+                    }, config=config_run)
 
         if result.get("plan"):
             return f"Implementation Plan saved to .devon/issues/{issue_number}/plan.md"
@@ -457,4 +481,4 @@ def _print_tasks_table(tasks: list):
             t["title"],
             status_styles.get(t["status"], t["status"]),
         )
-    CONSOLE.print(table)
+    get_console().print(table)
