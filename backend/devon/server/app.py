@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 repo_manager = RepoManager()
+running_jobs: Dict[str, str] = {} # job_id -> "planner" | "coder"
 
 class RepoInfo(BaseModel):
     name: str
@@ -125,6 +126,7 @@ async def execute_command(name: str, req: CommandRequest):
             return {"status": "error", "message": "Issue number must be an integer"}
         
         job_id = get_job_id(name, issue_number)
+        running_jobs[job_id] = "planner"
         
         thread = threading.Thread(
             target=_run_planner_background,
@@ -142,6 +144,7 @@ async def execute_command(name: str, req: CommandRequest):
             return {"status": "error", "message": "Issue number must be an integer"}
             
         job_id = get_job_id(name, issue_number)
+        running_jobs[job_id] = "coder"
         
         thread = threading.Thread(
             target=_run_coder_background,
@@ -270,8 +273,13 @@ async def get_agent_logs(repo_name: str, issue_number: int):
 
 @app.post("/agent/input/{repo_name}/{issue_number}")
 async def provide_agent_feedback(repo_name: str, issue_number: int, req: FeedbackRequest):
+    job_id = get_job_id(repo_name, issue_number)
+    agent_type = running_jobs.get(job_id, "planner") # Default to planner for safety
+    
+    target_fn = _run_planner_background if agent_type == "planner" else _run_coder_background
+    
     thread = threading.Thread(
-        target=_run_planner_background, 
+        target=target_fn, 
         args=(repo_name, issue_number, req.feedback)
     )
     thread.start()
@@ -289,7 +297,7 @@ def _run_planner_background(repo_name: str, issue_number: int, feedback: Optiona
     prompt = f"Issue #{issue_number}: {issue.title}\n\nDescription:\n{issue.body}"
     repo_path = str(repo_manager.get_repo_path(repo_name))
     
-    run_agent_plan(prompt, repo_path, issue_number)
+    run_agent_plan(prompt, repo_path, issue_number, feedback)
 
 def _run_coder_background(repo_name: str, issue_number: int, feedback: Optional[str] = None):
     job_id = get_job_id(repo_name, issue_number)
@@ -297,4 +305,4 @@ def _run_coder_background(repo_name: str, issue_number: int, feedback: Optional[
     set_coder_console(api_console)
     
     repo_path = str(repo_manager.get_repo_path(repo_name))
-    run_agent_code(repo_path, issue_number)
+    run_agent_code(repo_path, issue_number, feedback)

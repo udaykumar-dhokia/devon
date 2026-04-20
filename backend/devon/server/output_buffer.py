@@ -60,6 +60,9 @@ class APIConsole(Console):
     def log_status(self, text: str):
         self.log_event("status", text)
 
+    def log_feedback_request(self, data: Any):
+        self.log_event("feedback_request", data)
+
 global_output_buffer = AgentOutputBuffer()
 
 def get_job_id(repo_name: str, issue_number: Optional[int] = None) -> str:

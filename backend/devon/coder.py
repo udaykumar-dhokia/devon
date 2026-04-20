@@ -286,10 +286,12 @@ RULES:
 def review_task(state: CoderState) -> Command:
     task = state["tasks"][state["current_task_index"]]
     get_console().print(f"\n[bold cyan]Task {task['id']}: {task['title']}[/]")
-    feedback = interrupt({
+    data = {
         "question": "Any changes to this task? (Leave blank to approve)",
         "task": task
-    })
+    }
+    get_console().log_feedback_request(data)
+    feedback = interrupt(data)
     
     if isinstance(feedback, str) and feedback.strip():
         return Command(
@@ -425,17 +427,24 @@ def run_agent_code(repo_path: str, issue_number: int, feedback: Optional[str] = 
             graph = build_coder_graph().compile(checkpointer=checkpointer)
             config_run = {"configurable": {"thread_id": f"issue_{issue_number}"}}
 
-            result = graph.invoke({
-                "repo_path": repo_path,
-                "issue_number": issue_number,
-                "folder_md": folder_md,
-                "plan": plan,
-                "tasks": tasks,
-                "current_task_index": 0,
-                "messages": [],
-                "modified_files": [],
-                "last_summary": "",
-            }, config=config_run)
+            if feedback is not None:
+                result = graph.invoke(Command(resume=feedback), config=config_run)
+            else:
+                state_check = graph.get_state(config_run)
+                if state_check.values:
+                    result = graph.invoke(None, config=config_run)
+                else:
+                    result = graph.invoke({
+                        "repo_path": repo_path,
+                        "issue_number": issue_number,
+                        "folder_md": folder_md,
+                        "plan": plan,
+                        "tasks": tasks,
+                        "current_task_index": 0,
+                        "messages": [],
+                        "modified_files": [],
+                        "last_summary": "",
+                    }, config=config_run)
 
         completed = [t for t in result.get("tasks", []) if t["status"] == "done"]
         total = len(result.get("tasks", []))
@@ -450,7 +459,9 @@ def run_agent_code(repo_path: str, issue_number: int, feedback: Optional[str] = 
             get_console().print(table)
             get_console().print("\n")
 
-        return f"Coding complete. {len(completed)}/{total} tasks done."
+        res = f"Coding complete. {len(completed)}/{total} tasks done."
+        get_console().print(f"\n[bold green]{res}[/]")
+        return res
 
     except Exception as e:
         return f"Coding agent failed: {e}"

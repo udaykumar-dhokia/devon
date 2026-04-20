@@ -216,10 +216,12 @@ RULES:
 
 
 def review_tasks(state: PlannerState) -> Command:
-    feedback = interrupt({
+    data = {
         "question": "Any changes to tasks? (Leave blank to approve)",
         "tasks": state["tasks"]
-    })
+    }
+    get_console().log_feedback_request(data)
+    feedback = interrupt(data)
     
     if isinstance(feedback, str) and feedback.strip():
         return Command(
@@ -377,10 +379,12 @@ RULES:
 
 
 def review_plan(state: PlannerState) -> Command:
-    feedback = interrupt({
+    data = {
         "question": "Any changes to the plan? (Leave blank to approve)",
         "plan": state["plan"]
-    })
+    }
+    get_console().log_feedback_request(data)
+    feedback = interrupt(data)
     
     if isinstance(feedback, str) and feedback.strip():
         return Command(
@@ -451,11 +455,14 @@ def run_agent_plan(prompt: str, repo_path: str, issue_number: int, feedback: Opt
                     }, config=config_run)
 
         if result.get("plan"):
-            return f"Implementation Plan saved to .devon/issues/{issue_number}/plan.md"
+            res = f"Implementation Plan saved to .devon/issues/{issue_number}/plan.md"
         elif result.get("tasks"):
-            return f"Tasks created ({len(result['tasks'])}), but plan file was not written."
+            res = f"Tasks created ({len(result['tasks'])}), but plan file was not written."
         else:
-            return "Agent completed but no output was produced."
+            res = "Agent completed but no output was produced."
+        
+        get_console().print(f"\n[bold green]{res}[/]")
+        return res
 
     except Exception as e:
         return f"Agent execution failed: {e}"
